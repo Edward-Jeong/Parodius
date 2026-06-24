@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="EnemyWave" load_steps=2 format=3]
+
+[ext_resource path="res://scripts/resources/enemy_wave.gd" type="Script" id="1"]
+
+[resource]
+script = ExtResource("1")
+start_time = 235.0
+end_time = 395.0
+spawn_interval = 0.82
+enemy_frame = 2
+hp = 4.0
+speed = 255.0
+path = "dive"
+score = 180
+

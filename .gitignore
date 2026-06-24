@@ -1,0 +1,6 @@
+.godot/
+.runtime/
+.tools/
+*.log
+build/
+

@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=2 format=3]
+
+[ext_resource path="res://scripts/resources/weapon_data.gd" type="Script" id="1"]
+
+[resource]
+script = ExtResource("1")
+kind = "shield"
+display_name = "Mint Shield"
+max_level = 2
+damage_bonus = 0.0
+color = Color(0.35, 1, 0.72, 1)
+
