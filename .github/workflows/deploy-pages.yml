@@ -36,6 +36,7 @@ jobs:
 
       - name: Run smoke tests
         run: |
+          ./Godot_v4.7-stable_linux.x86_64 --headless --editor --path . --quit
           ./Godot_v4.7-stable_linux.x86_64 --headless --path . \
             --script res://tests/smoke_test.gd
           ./Godot_v4.7-stable_linux.x86_64 --headless --path . \
@@ -66,4 +67,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
