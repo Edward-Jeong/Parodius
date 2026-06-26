@@ -27,6 +27,9 @@ func run() -> void:
 		failures.append("Background did not scroll left")
 
 	var audio_manager = root.get_node("AudioManager")
+	var ui_theme: Theme = game.make_theme()
+	if ui_theme.default_font == null or not ui_theme.default_font.has_char("한".unicode_at(0)):
+		failures.append("UI font does not contain Korean glyphs")
 	if audio_manager.music_player.stream == null:
 		failures.append("Music stream was not created")
 	elif audio_manager.music_player.stream.data.is_empty():

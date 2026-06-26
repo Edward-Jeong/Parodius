@@ -5,6 +5,7 @@ const STAGE_END := 480.0
 const PLAYER_SHEET := preload("res://assets/art/player-sheet.png")
 const BG_TEXTURE := preload("res://assets/art/night-market-space.png")
 const HUD_ICONS := preload("res://assets/art/hud-icons.png")
+const UI_FONT := preload("res://assets/fonts/NanumGothic-Regular.ttf")
 const Projectile := preload("res://scripts/projectile.gd")
 const FormationTrackerScript := preload("res://scripts/formation_tracker.gd")
 const EnemySpawnerScript := preload("res://scripts/enemy_spawner.gd")
@@ -181,6 +182,7 @@ func update_background(delta: float) -> void:
 
 func make_theme() -> Theme:
 	var theme := Theme.new()
+	theme.default_font = UI_FONT
 	theme.default_font_size = 24
 	theme.set_color("font_color", "Label", Color.WHITE)
 	theme.set_color("font_shadow_color", "Label", Color("#24104f"))

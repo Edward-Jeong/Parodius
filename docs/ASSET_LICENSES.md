@@ -8,6 +8,7 @@
 | `assets/art/enemy-sheet.png` | OpenAI image generation plus local chroma-key removal | Original project asset |
 | `assets/art/boss.png` | OpenAI image generation plus local chroma-key removal | Original project asset |
 | `assets/art/hud-icons.png` | OpenAI image generation plus local chroma-key removal | Original project asset |
+| `assets/fonts/NanumGothic-Regular.ttf` | Google Fonts / Sandoll Communications | SIL Open Font License 1.1 (`assets/fonts/OFL-NanumGothic.txt`) |
 
 The `*-key.png` files are retained as editable chroma-key sources. No third-party ROM, commercial sprite, copyrighted character, logo, music, or sound effect is included.
 
