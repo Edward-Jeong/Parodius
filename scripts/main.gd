@@ -11,8 +11,14 @@ const Projectile := preload("res://scripts/projectile.gd")
 const PLAYER_CONFIG: PlayerConfig = preload("res://data/player_config.tres")
 const WAVES := [
 	preload("res://data/waves/zone_1.tres"),
+	preload("res://data/waves/zone_1_popcorn.tres"),
+	preload("res://data/waves/zone_1_formation.tres"),
 	preload("res://data/waves/zone_2.tres"),
-	preload("res://data/waves/zone_3.tres")
+	preload("res://data/waves/zone_2_arc.tres"),
+	preload("res://data/waves/zone_2_shooter.tres"),
+	preload("res://data/waves/zone_3.tres"),
+	preload("res://data/waves/zone_3_formation.tres"),
+	preload("res://data/waves/zone_3_shooter.tres")
 ]
 const CHECKPOINTS := [
 	preload("res://data/checkpoints/start.tres"),
@@ -51,9 +57,12 @@ var special := 0.0
 var invulnerable := 0.0
 var fire_cooldown := 0.0
 var spawn_cooldown := 0.0
+var wave_cooldowns: Dictionary = {}
 var enemies: Array[Dictionary] = []
 var projectiles: Array[Node] = []
 var pickups: Array[Dictionary] = []
+var formation_groups: Dictionary = {}
+var formation_sequence := 0
 var weapon_levels := [1, 0, 0, 0, 0]
 var kills := 0
 var midboss_spawned := false
@@ -128,6 +137,7 @@ func clear_root() -> void:
 	enemies.clear()
 	projectiles.clear()
 	pickups.clear()
+	formation_groups.clear()
 	powerup_boxes.clear()
 	scrolling_backgrounds.clear()
 
@@ -153,7 +163,7 @@ func add_scrolling_background(parent: Node) -> void:
 		scrolling_backgrounds.append(bg)
 
 func update_background(delta: float) -> void:
-	var scroll_speed: float = 96.0 + weapon_levels[4] * 12.0
+	var scroll_speed: float = 96.0 + weapon_levels[4] * 12.0 + clampf(elapsed / STAGE_END, 0.0, 1.0) * 42.0
 	for bg in scrolling_backgrounds:
 		bg.position.x -= scroll_speed * delta
 	for bg in scrolling_backgrounds:
@@ -283,6 +293,9 @@ func start_game() -> void:
 	multiplier = 1
 	special = 0.0
 	kills = 0
+	wave_cooldowns.clear()
+	formation_groups.clear()
+	formation_sequence = 0
 	midboss_spawned = false
 	boss_spawned = false
 	stage_complete = false
@@ -471,19 +484,20 @@ func update_player(delta: float) -> void:
 		fire_cooldown = PLAYER_CONFIG.fire_interval * (1.0 - weapon_levels[0] * 0.035)
 
 func update_stage(delta: float) -> void:
-	var active_wave: EnemyWave
 	for wave: EnemyWave in WAVES:
 		if elapsed >= wave.start_time and elapsed < wave.end_time:
-			active_wave = wave
-			break
-	if active_wave != null:
-		spawn_cooldown -= delta
-		if spawn_cooldown <= 0.0:
-			spawn_enemy(active_wave.enemy_frame, active_wave.hp, active_wave.speed, active_wave.path, active_wave.score)
-			spawn_cooldown = active_wave.spawn_interval
+			var key := wave.resource_path
+			var cooldown := float(wave_cooldowns.get(key, 0.0)) - delta
+			if cooldown <= 0.0:
+				spawn_wave(wave)
+				var pressure := 1.0 - clampf(elapsed / STAGE_END, 0.0, 1.0) * 0.18
+				wave_cooldowns[key] = maxf(0.32, wave.spawn_interval * pressure)
+			else:
+				wave_cooldowns[key] = cooldown
 	if elapsed >= 205.0 and not midboss_spawned:
 		midboss_spawned = true
-		spawn_enemy(5, 120.0, 75.0, "midboss", 5000)
+		clear_hostile_projectiles()
+		spawn_midboss()
 		show_message("MID-BOSS • MARKET CART", 2.0)
 	if elapsed >= 400.0 and not boss_spawned:
 		boss_spawned = true
@@ -495,22 +509,81 @@ func update_stage(delta: float) -> void:
 			checkpoint_time = cp.time_seconds
 			show_message(cp.label, 1.4)
 	if elapsed >= STAGE_END and not boss_spawned:
+		boss_spawned = true
 		spawn_boss()
 
-func spawn_enemy(frame: int, enemy_hp: float, speed: float, path: String, value: int) -> void:
+func spawn_wave(wave: EnemyWave) -> void:
+	if wave.formation_size <= 1:
+		spawn_enemy(wave.enemy_frame, wave.hp, wave.speed, wave.path, wave.score, "", 0, wave.formation_spacing, wave.lane_pattern, wave.shot_rate, wave.enemy_scale)
+		return
+	formation_sequence += 1
+	var group_id := "formation_%d" % formation_sequence
+	formation_groups[group_id] = {
+		"remaining": wave.formation_size,
+		"failed": false,
+		"reward": wave.reward_on_clear,
+		"kind": (formation_sequence - 1) % 5
+	}
+	AudioManager.play_sfx("boss")
+	show_message("DELIVERY CHAIN!", 0.55)
+	for index in wave.formation_size:
+		spawn_enemy(wave.enemy_frame, wave.hp, wave.speed, wave.path, wave.score, group_id, index, wave.formation_spacing, wave.lane_pattern, wave.shot_rate, wave.enemy_scale)
+
+func formation_spawn_position(index: int, size: int, spacing: Vector2, lane_pattern: String) -> Vector2:
+	var y := 360.0
+	match lane_pattern:
+		"spread":
+			y = 210.0 + index * (300.0 / maxf(1.0, size - 1.0))
+		"top":
+			y = 170.0 + index * 32.0
+		"bottom":
+			y = 610.0 - index * 32.0
+		"arc_top":
+			y = 175.0 + sin(float(index) / maxf(1.0, size - 1.0) * PI) * 185.0
+		"arc_bottom":
+			y = 625.0 - sin(float(index) / maxf(1.0, size - 1.0) * PI) * 185.0
+		_:
+			y = 360.0 + (index - (size - 1) * 0.5) * spacing.y
+	return Vector2(1350.0 + index * spacing.x, clampf(y, 145.0, 650.0))
+
+func spawn_enemy(frame: int, enemy_hp: float, speed: float, path: String, value: int, group_id := "", formation_index := 0, formation_spacing := Vector2(64.0, 0.0), lane_pattern := "center", shot_rate := 0.0, enemy_scale := 0.18) -> void:
 	var sprite := Sprite2D.new()
 	sprite.texture = ENEMY_SHEET
 	sprite.hframes = 3
 	sprite.vframes = 2
 	sprite.frame = frame
-	sprite.scale = Vector2(0.18, 0.18)
-	sprite.position = Vector2(1350, randf_range(150, 650))
+	sprite.scale = Vector2(enemy_scale, enemy_scale)
+	var formation_size := 1
+	if group_id != "" and formation_groups.has(group_id):
+		formation_size = int(formation_groups[group_id].remaining)
+	sprite.position = formation_spawn_position(formation_index, formation_size, formation_spacing, lane_pattern) if group_id != "" else Vector2(1350, randf_range(150, 650))
 	entity_layer.add_child(sprite)
 	enemies.append({
 		"node": sprite, "hp": enemy_hp, "max_hp": enemy_hp, "speed": speed,
-		"path": path, "age": 0.0, "score": value, "radius": 45.0,
-		"shoot": randf_range(0.8, 2.2), "boss": false
+		"path": path, "age": 0.0, "score": value, "radius": 45.0 * (enemy_scale / 0.18),
+		"shoot": randf_range(0.8, 2.2), "boss": false, "midboss": false, "stage_boss": false,
+		"group_id": group_id, "formation_index": formation_index, "shot_rate": shot_rate,
+		"base_y": sprite.position.y
 	})
+
+func spawn_midboss() -> void:
+	var sprite := Sprite2D.new()
+	sprite.texture = ENEMY_SHEET
+	sprite.hframes = 3
+	sprite.vframes = 2
+	sprite.frame = 5
+	sprite.scale = Vector2(0.34, 0.34)
+	sprite.position = Vector2(1450, 360)
+	entity_layer.add_child(sprite)
+	enemies.append({
+		"node": sprite, "hp": 260.0, "max_hp": 260.0, "speed": 105.0,
+		"path": "midboss", "age": 0.0, "score": 7500, "radius": 86.0,
+		"shoot": 1.2, "boss": true, "midboss": true, "stage_boss": false,
+		"group_id": "", "formation_index": 0, "shot_rate": 0.0, "summon": 4.0
+	})
+	boss_bar.max_value = 260.0
+	boss_bar.value = 260.0
+	boss_bar.visible = true
 
 func spawn_boss() -> void:
 	var sprite := Sprite2D.new()
@@ -521,7 +594,8 @@ func spawn_boss() -> void:
 	enemies.append({
 		"node": sprite, "hp": 650.0, "max_hp": 650.0, "speed": 85.0,
 		"path": "boss", "age": 0.0, "score": 25000, "radius": 145.0,
-		"shoot": 1.4, "boss": true
+		"shoot": 1.4, "boss": true, "midboss": false, "stage_boss": true,
+		"group_id": "", "formation_index": 0, "shot_rate": 0.0
 	})
 	boss_bar.max_value = 650.0
 	boss_bar.value = 650.0
@@ -544,18 +618,45 @@ func update_enemies(delta: float) -> void:
 			"dive":
 				node.position.x -= enemy.speed * delta
 				node.position.y += sin(enemy.age * 2.2) * 210.0 * delta
+				if node.position.x < 920.0:
+					var dive_aim := (player.position - node.position).normalized()
+					node.position += dive_aim * enemy.speed * 0.42 * delta
+			"lane":
+				node.position.x -= enemy.speed * delta
+			"arc":
+				node.position.x -= enemy.speed * delta
+				var arc_sign := -1.0 if int(enemy.formation_index) % 2 == 0 else 1.0
+				node.position.y = float(enemy.base_y) + sin(enemy.age * 2.4 + enemy.formation_index * 0.55) * 115.0 * arc_sign
+			"shooter":
+				node.position.x -= enemy.speed * delta
+				node.position.y = float(enemy.base_y) + sin(enemy.age * 1.8) * 58.0
+			"popcorn":
+				node.position.x -= enemy.speed * delta
+				node.position.y += sin(enemy.age * 7.0 + enemy.formation_index) * 70.0 * delta
 			"midboss":
 				node.position.x = move_toward(node.position.x, 1010.0, enemy.speed * delta)
 				node.position.y = 350.0 + sin(enemy.age * 1.4) * 175.0
+				enemy.summon = float(enemy.get("summon", 4.0)) - delta
+				if enemy.summon <= 0.0 and node.position.x < 1180.0:
+					spawn_midboss_minions(node.position)
+					enemy.summon = 4.8
 			"boss":
 				node.position.x = move_toward(node.position.x, 970.0, enemy.speed * delta)
 				node.position.y = 360.0 + sin(enemy.age * 0.85) * 150.0
 		if enemy.shoot <= 0.0 and node.position.x < 1200:
 			fire_enemy(node.position, enemy.boss)
-			enemy.shoot = 0.72 if enemy.boss else randf_range(1.5, 2.8)
+			var configured_rate := float(enemy.get("shot_rate", 0.0))
+			enemy.shoot = 0.72 if enemy.boss else (configured_rate if configured_rate > 0.0 else randf_range(1.5, 2.8))
 		if node.position.x < -160:
+			resolve_formation_enemy(enemy, false, node.position)
 			node.queue_free()
 			enemies.erase(enemy)
+
+func spawn_midboss_minions(origin: Vector2) -> void:
+	for index in 5:
+		var y := origin.y - 120.0 + index * 60.0
+		spawn_enemy(index % 3, 1.5, 255.0, "popcorn", 80, "", index, Vector2.ZERO, "center", 0.0, 0.13)
+		enemies.back().node.position = Vector2(origin.x + 70.0 + index * 18.0, clampf(y, 145.0, 650.0))
 
 func fire_player_weapon() -> void:
 	var damage: float = 1.0 + weapon_levels[0] * 0.35
@@ -636,28 +737,51 @@ func handle_collisions() -> void:
 		var node: Sprite2D = enemy.node
 		if is_instance_valid(node) and node.position.distance_to(player.position) < enemy.radius + 40.0:
 			damage_player()
+			resolve_formation_enemy(enemy, false, node.position)
+			enemy.group_id = ""
 			enemy.hp -= 6.0
 			if enemy.hp <= 0.0:
 				destroy_enemy(enemy)
+
+func resolve_formation_enemy(enemy: Dictionary, killed: bool, death_position: Vector2) -> void:
+	var group_id := String(enemy.get("group_id", ""))
+	if group_id == "" or not formation_groups.has(group_id):
+		return
+	var group: Dictionary = formation_groups[group_id]
+	if not killed:
+		group.failed = true
+	group.remaining = maxi(0, int(group.remaining) - 1)
+	if group.remaining <= 0:
+		if bool(group.reward) and not bool(group.failed):
+			spawn_pickup(death_position, int(group.kind))
+		formation_groups.erase(group_id)
+	else:
+		formation_groups[group_id] = group
 
 func destroy_enemy(enemy: Dictionary) -> void:
 	var node: Sprite2D = enemy.node
 	var death_position := node.position
 	var was_boss: bool = enemy.boss
+	var was_midboss: bool = bool(enemy.get("midboss", false))
+	var was_stage_boss: bool = bool(enemy.get("stage_boss", false))
 	node.queue_free()
 	enemies.erase(enemy)
+	resolve_formation_enemy(enemy, true, death_position)
 	combo += 1
 	combo_timeout = 2.2
 	multiplier = clampi(1 + combo / 5, 1, 9)
 	score += int(enemy.score) * multiplier
-	special = minf(PLAYER_CONFIG.special_max, special + (16.0 if was_boss else 4.0))
+	special = minf(PLAYER_CONFIG.special_max, special + (28.0 if was_midboss else (16.0 if was_boss else 4.0)))
 	kills += 1
 	AudioManager.play_sfx("explode")
-	if not was_boss and kills % 8 == 0:
-		spawn_pickup(death_position, (kills / 8 - 1) % 5)
+	if not was_boss and kills % 18 == 0:
+		spawn_pickup(death_position, (kills / 18 - 1) % 5)
 	if was_boss:
 		boss_bar.visible = false
-		if boss_spawned:
+		if was_midboss:
+			spawn_pickup(death_position + Vector2(-35.0, 0.0), kills % 5)
+			show_message("MID-BOSS CLEARED!", 1.2)
+		if was_stage_boss:
 			stage_complete = true
 			finish_game(true)
 
@@ -721,6 +845,8 @@ func restart_checkpoint() -> void:
 		if is_instance_valid(enemy.node):
 			enemy.node.queue_free()
 	enemies.clear()
+	formation_groups.clear()
+	wave_cooldowns.clear()
 	clear_hostile_projectiles()
 	elapsed = checkpoint_time
 	hp = PLAYER_CONFIG.checkpoint_hp

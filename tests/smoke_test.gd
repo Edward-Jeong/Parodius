@@ -31,6 +31,33 @@ func _init() -> void:
 		checkpoints.append(checkpoint.time_seconds)
 	if checkpoints != [0.0, 105.0, 235.0, 400.0]:
 		failures.append("Checkpoint timeline is invalid")
+	var wave_paths := [
+		"res://data/waves/zone_1.tres",
+		"res://data/waves/zone_1_popcorn.tres",
+		"res://data/waves/zone_1_formation.tres",
+		"res://data/waves/zone_2.tres",
+		"res://data/waves/zone_2_arc.tres",
+		"res://data/waves/zone_2_shooter.tres",
+		"res://data/waves/zone_3.tres",
+		"res://data/waves/zone_3_formation.tres",
+		"res://data/waves/zone_3_shooter.tres"
+	]
+	var reward_formations := 0
+	for path in wave_paths:
+		var wave: EnemyWave = load(path)
+		if wave == null:
+			failures.append("Wave did not load: " + path)
+			continue
+		if wave.formation_size < 1 or wave.formation_size > 8:
+			failures.append("Wave formation_size out of range: " + path)
+		if wave.spawn_interval <= 0.0:
+			failures.append("Wave spawn_interval must be positive: " + path)
+		if wave.reward_on_clear:
+			reward_formations += 1
+			if wave.formation_size != 5:
+				failures.append("Reward formation must use five enemies: " + path)
+	if reward_formations < 3:
+		failures.append("Expected at least three reward formations")
 	for action in ["move_left", "move_right", "move_up", "move_down"]:
 		if not InputMap.has_action(action):
 			failures.append("Missing PC movement action: " + action)

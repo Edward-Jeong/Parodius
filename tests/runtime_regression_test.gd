@@ -34,6 +34,47 @@ func run() -> void:
 	if audio_manager.sfx_streams.size() < 8:
 		failures.append("Expected gameplay sound effects were not created")
 
+	var formation_wave: EnemyWave = load("res://data/waves/zone_1_formation.tres")
+	game.enemies.clear()
+	game.pickups.clear()
+	game.formation_groups.clear()
+	game.spawn_wave(formation_wave)
+	if game.enemies.size() != 5:
+		failures.append("Reward formation did not spawn five enemies")
+	for enemy in game.enemies.duplicate():
+		game.destroy_enemy(enemy)
+	if game.pickups.size() != 1:
+		failures.append("Cleared five-enemy formation did not create exactly one pickup")
+
+	game.enemies.clear()
+	game.pickups.clear()
+	game.formation_groups.clear()
+	game.spawn_wave(formation_wave)
+	var escaped_enemy: Dictionary = game.enemies[0]
+	game.resolve_formation_enemy(escaped_enemy, false, escaped_enemy.node.position)
+	escaped_enemy.node.queue_free()
+	game.enemies.erase(escaped_enemy)
+	for enemy in game.enemies.duplicate():
+		game.destroy_enemy(enemy)
+	if game.pickups.size() != 0:
+		failures.append("Failed formation still created a reward pickup")
+
+	game.enemies.clear()
+	game.pickups.clear()
+	game.spawn_midboss()
+	if not game.boss_bar.visible:
+		failures.append("Midboss did not show a health bar")
+	for enemy in game.enemies.duplicate():
+		if bool(enemy.get("midboss", false)):
+			game.destroy_enemy(enemy)
+			break
+	if game.boss_bar.visible:
+		failures.append("Midboss health bar did not hide after defeat")
+	if game.stage_complete:
+		failures.append("Midboss defeat incorrectly completed the stage")
+	if game.pickups.size() == 0:
+		failures.append("Midboss defeat did not create a guaranteed pickup")
+
 	if failures.is_empty():
 		print("RUNTIME_REGRESSION_PASS")
 		quit(0)

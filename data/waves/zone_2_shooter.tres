@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="EnemyWave" load_steps=2 format=3]
+
+[ext_resource path="res://scripts/resources/enemy_wave.gd" type="Script" id="1"]
+
+[resource]
+script = ExtResource("1")
+start_time = 135.0
+end_time = 202.0
+spawn_interval = 3.8
+enemy_frame = 1
+hp = 4.0
+speed = 155.0
+path = "shooter"
+score = 220
+formation_size = 1
+formation_spacing = Vector2(64, 0)
+lane_pattern = "center"
+reward_on_clear = false
+shot_rate = 1.25
+enemy_scale = 0.19
