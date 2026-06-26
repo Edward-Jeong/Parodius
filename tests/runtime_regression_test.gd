@@ -37,7 +37,7 @@ func run() -> void:
 	var formation_wave: EnemyWave = load("res://data/waves/zone_1_formation.tres")
 	game.enemies.clear()
 	game.pickups.clear()
-	game.formation_groups.clear()
+	game.formation_tracker.reset()
 	game.spawn_wave(formation_wave)
 	if game.enemies.size() != 5:
 		failures.append("Reward formation did not spawn five enemies")
@@ -48,7 +48,7 @@ func run() -> void:
 
 	game.enemies.clear()
 	game.pickups.clear()
-	game.formation_groups.clear()
+	game.formation_tracker.reset()
 	game.spawn_wave(formation_wave)
 	var escaped_enemy: Dictionary = game.enemies[0]
 	game.resolve_formation_enemy(escaped_enemy, false, escaped_enemy.node.position)
