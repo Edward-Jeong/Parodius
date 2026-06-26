@@ -5,8 +5,7 @@
 [resource]
 script = ExtResource("1")
 kind = "spread"
-display_name = "Receipt Fan"
+display_name = "영수증 확산탄"
 max_level = 3
 damage_bonus = 0.15
 color = Color(1, 0.2, 0.72, 1)
-

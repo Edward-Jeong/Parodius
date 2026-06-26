@@ -2,6 +2,8 @@ extends Node
 
 const SAMPLE_RATE := 22050
 
+signal sfx_played(name: String)
+
 var music_player: AudioStreamPlayer
 var sfx_players: Array[AudioStreamPlayer] = []
 var sfx_streams: Dictionary = {}
@@ -28,6 +30,7 @@ func _ready() -> void:
 		"pickup": create_arpeggio([660.0, 880.0, 1100.0], 0.07, 0.45),
 		"explode": create_noise(0.22, 0.60),
 		"special": create_arpeggio([330.0, 440.0, 660.0, 880.0, 1320.0], 0.10, 0.55),
+		"formation": create_arpeggio([740.0, 980.0], 0.055, 0.28),
 		"boss": create_arpeggio([196.0, 174.0, 146.0, 110.0], 0.14, 0.52)
 	}
 	refresh_settings()
@@ -52,6 +55,7 @@ func play_sfx(name: String) -> void:
 	next_sfx_player = (next_sfx_player + 1) % sfx_players.size()
 	player.stream = sfx_streams[name]
 	player.play()
+	sfx_played.emit(name)
 
 func create_music() -> AudioStreamWAV:
 	var beat_seconds := 0.20

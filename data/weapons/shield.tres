@@ -5,8 +5,7 @@
 [resource]
 script = ExtResource("1")
 kind = "shield"
-display_name = "Mint Shield"
+display_name = "민트 보호막"
 max_level = 2
 damage_bonus = 0.0
 color = Color(0.35, 1, 0.72, 1)
-

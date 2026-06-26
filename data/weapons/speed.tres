@@ -5,8 +5,7 @@
 [resource]
 script = ExtResource("1")
 kind = "speed"
-display_name = "Quick Route"
+display_name = "빠른 배달"
 max_level = 3
 damage_bonus = 0.0
 color = Color(1, 0.52, 0.16, 1)
-

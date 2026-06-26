@@ -31,20 +31,37 @@ func run() -> void:
 		failures.append("Music stream was not created")
 	elif audio_manager.music_player.stream.data.is_empty():
 		failures.append("Music stream has no PCM data")
-	if audio_manager.sfx_streams.size() < 8:
+	if audio_manager.sfx_streams.size() < 10:
 		failures.append("Expected gameplay sound effects were not created")
+	if not audio_manager.sfx_streams.has("formation"):
+		failures.append("Formation warning sound was not created")
+	var played_sfx: Array[String] = []
+	audio_manager.sfx_played.connect(func(name: String): played_sfx.append(name))
 
 	var formation_wave: EnemyWave = load("res://data/waves/zone_1_formation.tres")
 	game.enemies.clear()
 	game.pickups.clear()
 	game.formation_tracker.reset()
+	played_sfx.clear()
 	game.spawn_wave(formation_wave)
 	if game.enemies.size() != 5:
 		failures.append("Reward formation did not spawn five enemies")
+	if played_sfx.count("formation") != 1:
+		failures.append("Reward formation did not play its warning sound exactly once")
 	for enemy in game.enemies.duplicate():
 		game.destroy_enemy(enemy)
 	if game.pickups.size() != 1:
 		failures.append("Cleared five-enemy formation did not create exactly one pickup")
+
+	var non_reward_wave: EnemyWave = load("res://data/waves/zone_1_popcorn.tres")
+	game.enemies.clear()
+	game.formation_tracker.reset()
+	played_sfx.clear()
+	game.spawn_wave(non_reward_wave)
+	if played_sfx.has("formation") or played_sfx.has("boss"):
+		failures.append("Non-reward formation played a formation or boss warning sound")
+	for enemy in game.enemies:
+		enemy.node.queue_free()
 
 	game.enemies.clear()
 	game.pickups.clear()

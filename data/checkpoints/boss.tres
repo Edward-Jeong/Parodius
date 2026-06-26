@@ -5,5 +5,4 @@
 [resource]
 script = ExtResource("1")
 time_seconds = 400.0
-label = "HOTTEOK ORBIT"
-
+label = "호떡 궤도"
