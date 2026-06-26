@@ -5,5 +5,4 @@
 [resource]
 script = ExtResource("1")
 time_seconds = 0.0
-label = "MARKET GATE"
-
+label = "야시장 입구"

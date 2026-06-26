@@ -5,8 +5,7 @@
 [resource]
 script = ExtResource("1")
 kind = "homing"
-display_name = "Homing Parcel"
+display_name = "유도 반찬통"
 max_level = 3
 damage_bonus = 0.2
 color = Color(1, 0.78, 0.12, 1)
-

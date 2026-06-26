@@ -3,11 +3,11 @@ extends Node2D
 const VIEW := Vector2(1280, 720)
 const STAGE_END := 480.0
 const PLAYER_SHEET := preload("res://assets/art/player-sheet.png")
-const ENEMY_SHEET := preload("res://assets/art/enemy-sheet.png")
-const BOSS_TEXTURE := preload("res://assets/art/boss.png")
 const BG_TEXTURE := preload("res://assets/art/night-market-space.png")
 const HUD_ICONS := preload("res://assets/art/hud-icons.png")
 const Projectile := preload("res://scripts/projectile.gd")
+const FormationTrackerScript := preload("res://scripts/formation_tracker.gd")
+const EnemySpawnerScript := preload("res://scripts/enemy_spawner.gd")
 const PLAYER_CONFIG: PlayerConfig = preload("res://data/player_config.tres")
 const WAVES := [
 	preload("res://data/waves/zone_1.tres"),
@@ -61,8 +61,9 @@ var wave_cooldowns: Dictionary = {}
 var enemies: Array[Dictionary] = []
 var projectiles: Array[Node] = []
 var pickups: Array[Dictionary] = []
+var formation_tracker
+var enemy_spawner
 var formation_groups: Dictionary = {}
-var formation_sequence := 0
 var weapon_levels := [1, 0, 0, 0, 0]
 var kills := 0
 var midboss_spawned := false
@@ -80,6 +81,9 @@ var boss_bar: ProgressBar
 var scrolling_backgrounds: Array[TextureRect] = []
 
 func _ready() -> void:
+	formation_tracker = FormationTrackerScript.new()
+	enemy_spawner = EnemySpawnerScript.new()
+	formation_groups = formation_tracker.groups
 	get_viewport().set_embedding_subwindows(false)
 	show_title()
 	var args := OS.get_cmdline_user_args()
@@ -137,7 +141,8 @@ func clear_root() -> void:
 	enemies.clear()
 	projectiles.clear()
 	pickups.clear()
-	formation_groups.clear()
+	if formation_tracker != null:
+		formation_tracker.reset()
 	powerup_boxes.clear()
 	scrolling_backgrounds.clear()
 
@@ -219,7 +224,7 @@ func show_title() -> void:
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.add_child(shade)
 	var title := Label.new()
-	title.text = "NEON NIGHT\nCOURIER"
+	title.text = "네온 야시장\n급배송"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 76)
 	title.add_theme_color_override("font_color", Color("#fff25c"))
@@ -227,7 +232,7 @@ func show_title() -> void:
 	title.size = Vector2(620, 190)
 	root.add_child(title)
 	var subtitle := Label.new()
-	subtitle.text = "Rocket Cat Delivery • Night Market Orbit"
+	subtitle.text = "로켓 고양이 배달 • 우주 야시장"
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	subtitle.position = Vector2(610, 292)
 	subtitle.size = Vector2(580, 45)
@@ -237,14 +242,14 @@ func show_title() -> void:
 	menu.position = Vector2(760, 380)
 	menu.add_theme_constant_override("separation", 14)
 	root.add_child(menu)
-	var start := neon_button("START DELIVERY")
+	var start := neon_button("배달 시작")
 	start.pressed.connect(start_game)
 	menu.add_child(start)
-	var settings := neon_button("SETTINGS")
+	var settings := neon_button("설정")
 	settings.pressed.connect(show_settings)
 	menu.add_child(settings)
 	var high := Label.new()
-	high.text = "BEST  %07d" % int(SaveManager.data.high_score)
+	high.text = "최고 점수  %07d" % int(SaveManager.data.high_score)
 	high.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	menu.add_child(high)
 
@@ -264,21 +269,21 @@ func show_settings() -> void:
 	content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 38)
 	modal.add_child(content)
 	var heading := Label.new()
-	heading.text = "SETTINGS"
+	heading.text = "설정"
 	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	heading.add_theme_font_size_override("font_size", 40)
 	content.add_child(heading)
 	var music := CheckButton.new()
-	music.text = "Music"
+	music.text = "배경 음악"
 	music.button_pressed = SaveManager.data.music_enabled
 	music.toggled.connect(func(on): SaveManager.data.music_enabled = on; SaveManager.save_data(); AudioManager.refresh_settings())
 	content.add_child(music)
 	var sfx := CheckButton.new()
-	sfx.text = "Sound Effects"
+	sfx.text = "효과음"
 	sfx.button_pressed = SaveManager.data.sfx_enabled
 	sfx.toggled.connect(func(on): SaveManager.data.sfx_enabled = on; SaveManager.save_data(); AudioManager.refresh_settings())
 	content.add_child(sfx)
-	var close := neon_button("DONE", Vector2(280, 58))
+	var close := neon_button("확인", Vector2(280, 58))
 	close.pressed.connect(modal.queue_free)
 	content.add_child(close)
 
@@ -294,8 +299,7 @@ func start_game() -> void:
 	special = 0.0
 	kills = 0
 	wave_cooldowns.clear()
-	formation_groups.clear()
-	formation_sequence = 0
+	formation_tracker.reset()
 	midboss_spawned = false
 	boss_spawned = false
 	stage_complete = false
@@ -315,11 +319,12 @@ func start_game() -> void:
 	world.add_child(entity_layer)
 	world.add_child(projectile_layer)
 	world.add_child(pickup_layer)
+	enemy_spawner.setup(entity_layer, enemies, formation_tracker)
 	create_player()
 	create_hud()
 	AudioManager.play_music()
 	AudioManager.play_sfx("menu")
-	show_message("MARKET GATE", 2.5)
+	show_message("야시장 입구", 2.5)
 
 func create_player() -> void:
 	player = Sprite2D.new()
@@ -444,7 +449,7 @@ func _process(delta: float) -> void:
 		use_special()
 	if Input.is_action_just_pressed("debug_skip"):
 		elapsed = minf(elapsed + 90.0, 401.0)
-		show_message("DEV FAST ROUTE", 1.0)
+		show_message("개발용 구간 이동", 1.0)
 	elapsed += delta
 	update_background(delta)
 	invulnerable = maxf(0.0, invulnerable - delta)
@@ -498,12 +503,12 @@ func update_stage(delta: float) -> void:
 		midboss_spawned = true
 		clear_hostile_projectiles()
 		spawn_midboss()
-		show_message("MID-BOSS • MARKET CART", 2.0)
+		show_message("중간 보스 • 야시장 수레", 2.0)
 	if elapsed >= 400.0 and not boss_spawned:
 		boss_spawned = true
 		clear_hostile_projectiles()
 		spawn_boss()
-		show_message("HOTTEOK ORBIT", 2.0)
+		show_message("호떡 궤도", 2.0)
 	for cp: CheckpointData in CHECKPOINTS:
 		if elapsed >= cp.time_seconds and cp.time_seconds > checkpoint_time:
 			checkpoint_time = cp.time_seconds
@@ -513,92 +518,24 @@ func update_stage(delta: float) -> void:
 		spawn_boss()
 
 func spawn_wave(wave: EnemyWave) -> void:
-	if wave.formation_size <= 1:
-		spawn_enemy(wave.enemy_frame, wave.hp, wave.speed, wave.path, wave.score, "", 0, wave.formation_spacing, wave.lane_pattern, wave.shot_rate, wave.enemy_scale)
-		return
-	formation_sequence += 1
-	var group_id := "formation_%d" % formation_sequence
-	formation_groups[group_id] = {
-		"remaining": wave.formation_size,
-		"failed": false,
-		"reward": wave.reward_on_clear,
-		"kind": (formation_sequence - 1) % 5
-	}
-	AudioManager.play_sfx("boss")
-	show_message("DELIVERY CHAIN!", 0.55)
-	for index in wave.formation_size:
-		spawn_enemy(wave.enemy_frame, wave.hp, wave.speed, wave.path, wave.score, group_id, index, wave.formation_spacing, wave.lane_pattern, wave.shot_rate, wave.enemy_scale)
-
-func formation_spawn_position(index: int, size: int, spacing: Vector2, lane_pattern: String) -> Vector2:
-	var y := 360.0
-	match lane_pattern:
-		"spread":
-			y = 210.0 + index * (300.0 / maxf(1.0, size - 1.0))
-		"top":
-			y = 170.0 + index * 32.0
-		"bottom":
-			y = 610.0 - index * 32.0
-		"arc_top":
-			y = 175.0 + sin(float(index) / maxf(1.0, size - 1.0) * PI) * 185.0
-		"arc_bottom":
-			y = 625.0 - sin(float(index) / maxf(1.0, size - 1.0) * PI) * 185.0
-		_:
-			y = 360.0 + (index - (size - 1) * 0.5) * spacing.y
-	return Vector2(1350.0 + index * spacing.x, clampf(y, 145.0, 650.0))
+	var spawned_formation: bool = enemy_spawner.spawn_wave(wave)
+	if spawned_formation and wave.reward_on_clear:
+		AudioManager.play_sfx("formation")
+		show_message("연속 배달 편대!", 0.55)
 
 func spawn_enemy(frame: int, enemy_hp: float, speed: float, path: String, value: int, group_id := "", formation_index := 0, formation_spacing := Vector2(64.0, 0.0), lane_pattern := "center", shot_rate := 0.0, enemy_scale := 0.18) -> void:
-	var sprite := Sprite2D.new()
-	sprite.texture = ENEMY_SHEET
-	sprite.hframes = 3
-	sprite.vframes = 2
-	sprite.frame = frame
-	sprite.scale = Vector2(enemy_scale, enemy_scale)
-	var formation_size := 1
-	if group_id != "" and formation_groups.has(group_id):
-		formation_size = int(formation_groups[group_id].remaining)
-	sprite.position = formation_spawn_position(formation_index, formation_size, formation_spacing, lane_pattern) if group_id != "" else Vector2(1350, randf_range(150, 650))
-	entity_layer.add_child(sprite)
-	enemies.append({
-		"node": sprite, "hp": enemy_hp, "max_hp": enemy_hp, "speed": speed,
-		"path": path, "age": 0.0, "score": value, "radius": 45.0 * (enemy_scale / 0.18),
-		"shoot": randf_range(0.8, 2.2), "boss": false, "midboss": false, "stage_boss": false,
-		"group_id": group_id, "formation_index": formation_index, "shot_rate": shot_rate,
-		"base_y": sprite.position.y
-	})
+	enemy_spawner.spawn_enemy(frame, enemy_hp, speed, path, value, group_id, formation_index, formation_spacing, lane_pattern, shot_rate, enemy_scale)
 
 func spawn_midboss() -> void:
-	var sprite := Sprite2D.new()
-	sprite.texture = ENEMY_SHEET
-	sprite.hframes = 3
-	sprite.vframes = 2
-	sprite.frame = 5
-	sprite.scale = Vector2(0.34, 0.34)
-	sprite.position = Vector2(1450, 360)
-	entity_layer.add_child(sprite)
-	enemies.append({
-		"node": sprite, "hp": 260.0, "max_hp": 260.0, "speed": 105.0,
-		"path": "midboss", "age": 0.0, "score": 7500, "radius": 86.0,
-		"shoot": 1.2, "boss": true, "midboss": true, "stage_boss": false,
-		"group_id": "", "formation_index": 0, "shot_rate": 0.0, "summon": 4.0
-	})
+	var enemy: Dictionary = enemy_spawner.spawn_midboss()
 	boss_bar.max_value = 260.0
-	boss_bar.value = 260.0
+	boss_bar.value = enemy.max_hp
 	boss_bar.visible = true
 
 func spawn_boss() -> void:
-	var sprite := Sprite2D.new()
-	sprite.texture = BOSS_TEXTURE
-	sprite.scale = Vector2(0.33, 0.33)
-	sprite.position = Vector2(1450, 360)
-	entity_layer.add_child(sprite)
-	enemies.append({
-		"node": sprite, "hp": 650.0, "max_hp": 650.0, "speed": 85.0,
-		"path": "boss", "age": 0.0, "score": 25000, "radius": 145.0,
-		"shoot": 1.4, "boss": true, "midboss": false, "stage_boss": true,
-		"group_id": "", "formation_index": 0, "shot_rate": 0.0
-	})
+	var enemy: Dictionary = enemy_spawner.spawn_boss()
 	boss_bar.max_value = 650.0
-	boss_bar.value = 650.0
+	boss_bar.value = enemy.max_hp
 	boss_bar.visible = true
 
 func update_enemies(delta: float) -> void:
@@ -653,10 +590,7 @@ func update_enemies(delta: float) -> void:
 			enemies.erase(enemy)
 
 func spawn_midboss_minions(origin: Vector2) -> void:
-	for index in 5:
-		var y := origin.y - 120.0 + index * 60.0
-		spawn_enemy(index % 3, 1.5, 255.0, "popcorn", 80, "", index, Vector2.ZERO, "center", 0.0, 0.13)
-		enemies.back().node.position = Vector2(origin.x + 70.0 + index * 18.0, clampf(y, 145.0, 650.0))
+	enemy_spawner.spawn_midboss_minions(origin)
 
 func fire_player_weapon() -> void:
 	var damage: float = 1.0 + weapon_levels[0] * 0.35
@@ -745,18 +679,9 @@ func handle_collisions() -> void:
 
 func resolve_formation_enemy(enemy: Dictionary, killed: bool, death_position: Vector2) -> void:
 	var group_id := String(enemy.get("group_id", ""))
-	if group_id == "" or not formation_groups.has(group_id):
-		return
-	var group: Dictionary = formation_groups[group_id]
-	if not killed:
-		group.failed = true
-	group.remaining = maxi(0, int(group.remaining) - 1)
-	if group.remaining <= 0:
-		if bool(group.reward) and not bool(group.failed):
-			spawn_pickup(death_position, int(group.kind))
-		formation_groups.erase(group_id)
-	else:
-		formation_groups[group_id] = group
+	var result: Dictionary = formation_tracker.resolve(group_id, killed)
+	if bool(result.reward):
+		spawn_pickup(death_position, int(result.kind))
 
 func destroy_enemy(enemy: Dictionary) -> void:
 	var node: Sprite2D = enemy.node
@@ -780,7 +705,7 @@ func destroy_enemy(enemy: Dictionary) -> void:
 		boss_bar.visible = false
 		if was_midboss:
 			spawn_pickup(death_position + Vector2(-35.0, 0.0), kills % 5)
-			show_message("MID-BOSS CLEARED!", 1.2)
+			show_message("중간 보스 격파!", 1.2)
 		if was_stage_boss:
 			stage_complete = true
 			finish_game(true)
@@ -828,7 +753,7 @@ func damage_player() -> void:
 		shield_ring.visible = weapon_levels[3] > 0
 		invulnerable = 0.7
 		AudioManager.play_sfx("shield")
-		show_message("SHIELD SAVED DELIVERY", 0.7)
+		show_message("보호막 방어 성공!", 0.7)
 		return
 	hp -= 1
 	combo = 0
@@ -845,7 +770,7 @@ func restart_checkpoint() -> void:
 		if is_instance_valid(enemy.node):
 			enemy.node.queue_free()
 	enemies.clear()
-	formation_groups.clear()
+	formation_tracker.reset()
 	wave_cooldowns.clear()
 	clear_hostile_projectiles()
 	elapsed = checkpoint_time
@@ -856,7 +781,7 @@ func restart_checkpoint() -> void:
 	invulnerable = 2.0
 	midboss_spawned = elapsed > 205.0
 	boss_spawned = elapsed >= 400.0
-	show_message("CHECKPOINT • DELIVERY RESUMED", 1.8)
+	show_message("중간 지점 • 배달 재개", 1.8)
 	if boss_spawned:
 		spawn_boss()
 
@@ -872,7 +797,7 @@ func use_special() -> void:
 		enemy.hp -= 18.0
 		if enemy.hp <= 0.0:
 			destroy_enemy(enemy)
-	show_message("CAT EXPRESS!", 0.8)
+	show_message("고양이 급배송!", 0.8)
 	var tween := create_tween()
 	tween.tween_property(player, "position:x", minf(player.position.x + 300.0, 1040.0), 0.22)
 	tween.tween_property(player, "position:x", drag_target.x, 0.32)
@@ -929,15 +854,15 @@ func show_pause_menu() -> void:
 	menu.add_theme_constant_override("separation", 18)
 	panel.add_child(menu)
 	var heading := Label.new()
-	heading.text = "DELIVERY PAUSED"
+	heading.text = "배달 일시정지"
 	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	heading.add_theme_font_size_override("font_size", 36)
 	menu.add_child(heading)
-	var resume := neon_button("RESUME", Vector2(320, 60))
+	var resume := neon_button("계속하기", Vector2(320, 60))
 	resume.process_mode = Node.PROCESS_MODE_ALWAYS
 	resume.pressed.connect(toggle_pause)
 	menu.add_child(resume)
-	var quit := neon_button("QUIT TO TITLE", Vector2(320, 60))
+	var quit := neon_button("타이틀로 나가기", Vector2(320, 60))
 	quit.process_mode = Node.PROCESS_MODE_ALWAYS
 	quit.pressed.connect(func(): get_tree().paused = false; show_title())
 	menu.add_child(quit)
@@ -962,20 +887,20 @@ func finish_game(completed: bool) -> void:
 	content.add_theme_constant_override("separation", 20)
 	result.add_child(content)
 	var title := Label.new()
-	title.text = "DELIVERY COMPLETE!" if completed else "DELIVERY ENDED"
+	title.text = "배달 완료!" if completed else "배달 종료"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 44)
 	title.add_theme_color_override("font_color", Color("#fff25c"))
 	content.add_child(title)
 	var stats := Label.new()
-	stats.text = "SCORE  %07d\nBEST   %07d\nMAX COMBO  x%d" % [score, int(SaveManager.data.high_score), multiplier]
+	stats.text = "점수  %07d\n최고 점수  %07d\n최고 배율  x%d" % [score, int(SaveManager.data.high_score), multiplier]
 	stats.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stats.add_theme_font_size_override("font_size", 28)
 	content.add_child(stats)
-	var retry := neon_button("DELIVER AGAIN", Vector2(350, 62))
+	var retry := neon_button("다시 배달하기", Vector2(350, 62))
 	retry.pressed.connect(start_game)
 	content.add_child(retry)
-	var title_button := neon_button("TITLE", Vector2(350, 62))
+	var title_button := neon_button("타이틀로", Vector2(350, 62))
 	title_button.pressed.connect(show_title)
 	content.add_child(title_button)
 

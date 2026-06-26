@@ -5,8 +5,7 @@
 [resource]
 script = ExtResource("1")
 kind = "basic"
-display_name = "Rocket Shot"
+display_name = "로켓탄 강화"
 max_level = 5
 damage_bonus = 0.35
 color = Color(0.22, 0.95, 1, 1)
-
