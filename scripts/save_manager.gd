@@ -3,6 +3,7 @@ extends Node
 const SAVE_PATH := "user://save.json"
 var data := {
 	"high_score": 0,
+	"highest_level": 1,
 	"stage_complete": false,
 	"music_enabled": true,
 	"sfx_enabled": true
@@ -28,8 +29,7 @@ func save_data() -> void:
 	if file != null:
 		file.store_string(JSON.stringify(data))
 
-func record_result(score: int, completed: bool) -> void:
+func record_result(score: int, reached_level: int) -> void:
 	data.high_score = maxi(int(data.high_score), score)
-	data.stage_complete = bool(data.stage_complete) or completed
+	data.highest_level = maxi(int(data.highest_level), reached_level)
 	save_data()
-

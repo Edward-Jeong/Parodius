@@ -4,12 +4,11 @@
 
 [resource]
 script = ExtResource("1")
-start_time = 105.0
-end_time = 205.0
+start_time = 45.0
+end_time = 90.0
 spawn_interval = 1.05
 enemy_frame = 1
 hp = 3.0
 speed = 220.0
 path = "sine"
 score = 140
-

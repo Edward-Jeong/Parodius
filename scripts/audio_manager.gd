@@ -31,6 +31,7 @@ func _ready() -> void:
 		"explode": create_noise(0.22, 0.60),
 		"special": create_arpeggio([330.0, 440.0, 660.0, 880.0, 1320.0], 0.10, 0.55),
 		"formation": create_arpeggio([740.0, 980.0], 0.055, 0.28),
+		"level_up": create_arpeggio([523.25, 659.25, 783.99, 1046.50], 0.09, 0.48),
 		"boss": create_arpeggio([196.0, 174.0, 146.0, 110.0], 0.14, 0.52)
 	}
 	refresh_settings()
