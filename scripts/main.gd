@@ -1,7 +1,8 @@
 extends Node2D
 
 const VIEW := Vector2(1280, 720)
-const STAGE_END := 480.0
+const LEVEL_DURATION := 180.0
+const MIDBOSS_TIME := 90.0
 const PLAYER_SHEET := preload("res://assets/art/player-sheet.png")
 const BG_TEXTURE := preload("res://assets/art/night-market-space.png")
 const HUD_ICONS := preload("res://assets/art/hud-icons.png")
@@ -20,12 +21,6 @@ const WAVES := [
 	preload("res://data/waves/zone_3.tres"),
 	preload("res://data/waves/zone_3_formation.tres"),
 	preload("res://data/waves/zone_3_shooter.tres")
-]
-const CHECKPOINTS := [
-	preload("res://data/checkpoints/start.tres"),
-	preload("res://data/checkpoints/zone_2.tres"),
-	preload("res://data/checkpoints/zone_3.tres"),
-	preload("res://data/checkpoints/boss.tres")
 ]
 const WEAPONS := [
 	preload("res://data/weapons/basic.tres"),
@@ -47,8 +42,9 @@ var player: Sprite2D
 var shield_ring: Line2D
 var drag_target := Vector2(260, 360)
 var dragging := false
-var elapsed := 0.0
-var checkpoint_time := 0.0
+var run_elapsed := 0.0
+var level_elapsed := 0.0
+var level := 1
 var hp := 3
 var score := 0
 var combo := 0
@@ -68,13 +64,17 @@ var formation_groups: Dictionary = {}
 var weapon_levels := [1, 0, 0, 0, 0]
 var kills := 0
 var midboss_spawned := false
+var midboss_alive := false
 var boss_spawned := false
+var boss_alive := false
 var stage_complete := false
+var current_difficulty: Dictionary = {}
 var message_time := 0.0
 var hp_label: Label
 var score_label: Label
 var combo_label: Label
 var timer_label: Label
+var level_label: Label
 var special_bar: ProgressBar
 var message_label: Label
 var powerup_boxes: Array[TextureRect] = []
@@ -94,10 +94,16 @@ func _ready() -> void:
 		call_deferred("start_qa_game")
 	elif "--qa-boss" in args:
 		call_deferred("start_qa_boss")
+	elif "--qa-result" in args:
+		call_deferred("start_qa_result")
 
 func start_qa_game() -> void:
 	start_game()
-	elapsed = 32.0
+	level = 2
+	current_difficulty = difficulty_for_level(level)
+	enemy_spawner.set_difficulty(current_difficulty)
+	run_elapsed = 32.0
+	level_elapsed = 32.0
 	special = 72.0
 	weapon_levels = [3, 1, 1, 1, 1]
 	score = 123456
@@ -113,12 +119,25 @@ func start_qa_game() -> void:
 
 func start_qa_boss() -> void:
 	start_game()
-	elapsed = 401.0
+	run_elapsed = 180.0
+	level_elapsed = LEVEL_DURATION
+	midboss_spawned = true
+	midboss_alive = false
 	special = PLAYER_CONFIG.special_max
 	weapon_levels = [5, 3, 3, 2, 3]
 	shield_ring.visible = true
 	await get_tree().create_timer(3.0).timeout
 	capture_qa_screen("boss")
+
+func start_qa_result() -> void:
+	start_game()
+	level = 3
+	score = 43210
+	run_elapsed = 427.0
+	update_hud()
+	finish_game(false)
+	await get_tree().process_frame
+	capture_qa_screen("result")
 
 func capture_qa_screen(label: String) -> void:
 	await get_tree().process_frame
@@ -169,7 +188,8 @@ func add_scrolling_background(parent: Node) -> void:
 		scrolling_backgrounds.append(bg)
 
 func update_background(delta: float) -> void:
-	var scroll_speed: float = 96.0 + weapon_levels[4] * 12.0 + clampf(elapsed / STAGE_END, 0.0, 1.0) * 42.0
+	var level_scroll := float(current_difficulty.get("background", 1.0))
+	var scroll_speed: float = (96.0 + weapon_levels[4] * 12.0 + clampf(level_elapsed / LEVEL_DURATION, 0.0, 1.0) * 42.0) * level_scroll
 	for bg in scrolling_backgrounds:
 		bg.position.x -= scroll_speed * delta
 	for bg in scrolling_backgrounds:
@@ -251,7 +271,7 @@ func show_title() -> void:
 	settings.pressed.connect(show_settings)
 	menu.add_child(settings)
 	var high := Label.new()
-	high.text = "최고 점수  %07d" % int(SaveManager.data.high_score)
+	high.text = "최고 점수  %07d\n최고 레벨  %d" % [int(SaveManager.data.high_score), int(SaveManager.data.highest_level)]
 	high.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	menu.add_child(high)
 
@@ -289,11 +309,24 @@ func show_settings() -> void:
 	close.pressed.connect(modal.queue_free)
 	content.add_child(close)
 
+func difficulty_for_level(target_level: int) -> Dictionary:
+	var rank := maxf(0.0, target_level - 1.0)
+	return {
+		"health": minf(3.0, 1.0 + rank * 0.18),
+		"speed": minf(1.5, 1.0 + rank * 0.05),
+		"spawn_interval": maxf(0.55, 1.0 - rank * 0.07),
+		"shot_interval": maxf(0.55, 1.0 - rank * 0.06),
+		"projectile_speed": minf(1.6, 1.0 + rank * 0.06),
+		"score": 1.0 + rank * 0.20,
+		"background": minf(1.35, 1.0 + rank * 0.04)
+	}
+
 func start_game() -> void:
 	clear_root()
 	state = State.PLAYING
-	elapsed = 0.0
-	checkpoint_time = 0.0
+	run_elapsed = 0.0
+	level_elapsed = 0.0
+	level = 1
 	hp = PLAYER_CONFIG.max_hp
 	score = 0
 	combo = 0
@@ -303,8 +336,11 @@ func start_game() -> void:
 	wave_cooldowns.clear()
 	formation_tracker.reset()
 	midboss_spawned = false
+	midboss_alive = false
 	boss_spawned = false
+	boss_alive = false
 	stage_complete = false
+	current_difficulty = difficulty_for_level(level)
 	weapon_levels = [1, 0, 0, 0, 0]
 	world = Node2D.new()
 	add_child(world)
@@ -322,6 +358,7 @@ func start_game() -> void:
 	world.add_child(projectile_layer)
 	world.add_child(pickup_layer)
 	enemy_spawner.setup(entity_layer, enemies, formation_tracker)
+	enemy_spawner.set_difficulty(current_difficulty)
 	create_player()
 	create_hud()
 	AudioManager.play_music()
@@ -367,7 +404,7 @@ func create_hud() -> void:
 	top.add_theme_stylebox_override("panel", style)
 	root.add_child(top)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 22)
+	row.add_theme_constant_override("separation", 12)
 	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 14)
 	top.add_child(row)
 	var heart_icon := TextureRect.new()
@@ -377,26 +414,30 @@ func create_hud() -> void:
 	heart_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	row.add_child(heart_icon)
 	hp_label = Label.new()
-	hp_label.custom_minimum_size.x = 90
+	hp_label.custom_minimum_size.x = 72
 	row.add_child(hp_label)
 	score_label = Label.new()
-	score_label.custom_minimum_size.x = 190
+	score_label.custom_minimum_size.x = 150
 	row.add_child(score_label)
 	combo_label = Label.new()
-	combo_label.custom_minimum_size.x = 125
+	combo_label.custom_minimum_size.x = 105
 	combo_label.add_theme_color_override("font_color", Color("#fff25c"))
 	row.add_child(combo_label)
 	for i in 5:
 		var icon := TextureRect.new()
 		icon.texture = atlas(HUD_ICONS, 4, 2, i + 1)
-		icon.custom_minimum_size = Vector2(52, 52)
+		icon.custom_minimum_size = Vector2(46, 46)
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		icon.modulate = Color(0.35, 0.35, 0.45)
 		row.add_child(icon)
 		powerup_boxes.append(icon)
+	level_label = Label.new()
+	level_label.custom_minimum_size.x = 90
+	level_label.add_theme_color_override("font_color", Color("#52f5ff"))
+	row.add_child(level_label)
 	timer_label = Label.new()
-	timer_label.custom_minimum_size.x = 100
+	timer_label.custom_minimum_size.x = 95
 	row.add_child(timer_label)
 	var pause_icon := Sprite2D.new()
 	pause_icon.texture = atlas(HUD_ICONS, 4, 2, 7)
@@ -450,9 +491,12 @@ func _process(delta: float) -> void:
 	if Input.is_action_just_pressed("special_delivery"):
 		use_special()
 	if Input.is_action_just_pressed("debug_skip"):
-		elapsed = minf(elapsed + 90.0, 401.0)
+		var skipped := minf(30.0, LEVEL_DURATION - level_elapsed)
+		level_elapsed += skipped
+		run_elapsed += skipped
 		show_message("개발용 구간 이동", 1.0)
-	elapsed += delta
+	run_elapsed += delta
+	level_elapsed += delta
 	update_background(delta)
 	invulnerable = maxf(0.0, invulnerable - delta)
 	if invulnerable > 0.0:
@@ -491,33 +535,48 @@ func update_player(delta: float) -> void:
 		fire_cooldown = PLAYER_CONFIG.fire_interval * (1.0 - weapon_levels[0] * 0.035)
 
 func update_stage(delta: float) -> void:
+	if not midboss_spawned and level_elapsed >= MIDBOSS_TIME:
+		midboss_spawned = true
+		midboss_alive = true
+		clear_regular_enemies()
+		clear_hostile_projectiles()
+		spawn_midboss()
+		show_message("중간 보스 • 야시장 수레", 2.0)
+		return
+	if midboss_alive:
+		return
+	if not boss_spawned and level_elapsed >= LEVEL_DURATION:
+		boss_spawned = true
+		boss_alive = true
+		clear_regular_enemies()
+		clear_hostile_projectiles()
+		spawn_boss()
+		show_message("최종 보스 • 호떡 궤도", 2.0)
+		return
+	if boss_alive:
+		return
 	for wave: EnemyWave in WAVES:
-		if elapsed >= wave.start_time and elapsed < wave.end_time:
+		if level_elapsed >= wave.start_time and level_elapsed < wave.end_time:
 			var key := wave.resource_path
 			var cooldown := float(wave_cooldowns.get(key, 0.0)) - delta
 			if cooldown <= 0.0:
 				spawn_wave(wave)
-				var pressure := 1.0 - clampf(elapsed / STAGE_END, 0.0, 1.0) * 0.18
-				wave_cooldowns[key] = maxf(0.32, wave.spawn_interval * pressure)
+				var pressure := 1.0 - clampf(level_elapsed / LEVEL_DURATION, 0.0, 1.0) * 0.12
+				var level_spawn_interval := float(current_difficulty.get("spawn_interval", 1.0))
+				wave_cooldowns[key] = maxf(0.32, wave.spawn_interval * pressure * level_spawn_interval)
 			else:
 				wave_cooldowns[key] = cooldown
-	if elapsed >= 205.0 and not midboss_spawned:
-		midboss_spawned = true
-		clear_hostile_projectiles()
-		spawn_midboss()
-		show_message("중간 보스 • 야시장 수레", 2.0)
-	if elapsed >= 400.0 and not boss_spawned:
-		boss_spawned = true
-		clear_hostile_projectiles()
-		spawn_boss()
-		show_message("호떡 궤도", 2.0)
-	for cp: CheckpointData in CHECKPOINTS:
-		if elapsed >= cp.time_seconds and cp.time_seconds > checkpoint_time:
-			checkpoint_time = cp.time_seconds
-			show_message(cp.label, 1.4)
-	if elapsed >= STAGE_END and not boss_spawned:
-		boss_spawned = true
-		spawn_boss()
+
+func clear_regular_enemies() -> void:
+	for enemy in enemies.duplicate():
+		if bool(enemy.get("boss", false)):
+			continue
+		var node: Node = enemy.node
+		if is_instance_valid(node):
+			resolve_formation_enemy(enemy, false, node.position)
+			node.queue_free()
+		enemies.erase(enemy)
+	formation_tracker.reset()
 
 func spawn_wave(wave: EnemyWave) -> void:
 	var spawned_formation: bool = enemy_spawner.spawn_wave(wave)
@@ -530,13 +589,13 @@ func spawn_enemy(frame: int, enemy_hp: float, speed: float, path: String, value:
 
 func spawn_midboss() -> void:
 	var enemy: Dictionary = enemy_spawner.spawn_midboss()
-	boss_bar.max_value = 260.0
+	boss_bar.max_value = enemy.max_hp
 	boss_bar.value = enemy.max_hp
 	boss_bar.visible = true
 
 func spawn_boss() -> void:
 	var enemy: Dictionary = enemy_spawner.spawn_boss()
-	boss_bar.max_value = 650.0
+	boss_bar.max_value = enemy.max_hp
 	boss_bar.value = enemy.max_hp
 	boss_bar.visible = true
 
@@ -578,14 +637,15 @@ func update_enemies(delta: float) -> void:
 				enemy.summon = float(enemy.get("summon", 4.0)) - delta
 				if enemy.summon <= 0.0 and node.position.x < 1180.0:
 					spawn_midboss_minions(node.position)
-					enemy.summon = 4.8
+					enemy.summon = 4.8 * float(enemy.get("shot_interval_multiplier", 1.0))
 			"boss":
 				node.position.x = move_toward(node.position.x, 970.0, enemy.speed * delta)
 				node.position.y = 360.0 + sin(enemy.age * 0.85) * 150.0
 		if enemy.shoot <= 0.0 and node.position.x < 1200:
 			fire_enemy(node.position, enemy.boss)
 			var configured_rate := float(enemy.get("shot_rate", 0.0))
-			enemy.shoot = 0.72 if enemy.boss else (configured_rate if configured_rate > 0.0 else randf_range(1.5, 2.8))
+			var shot_interval := float(enemy.get("shot_interval_multiplier", 1.0))
+			enemy.shoot = 0.72 * shot_interval if enemy.boss else (configured_rate if configured_rate > 0.0 else randf_range(1.5, 2.8) * shot_interval)
 		if node.position.x < -160:
 			resolve_formation_enemy(enemy, false, node.position)
 			node.queue_free()
@@ -609,11 +669,12 @@ func fire_player_weapon() -> void:
 
 func fire_enemy(origin: Vector2, boss: bool) -> void:
 	var aim := (player.position - origin).normalized()
+	var projectile_speed := float(current_difficulty.get("projectile_speed", 1.0))
 	AudioManager.play_sfx("enemy_shot")
-	spawn_projectile(origin, aim * (300.0 if boss else 240.0), false, 1.0, Color("#ff3b9f"), 11)
+	spawn_projectile(origin, aim * (300.0 if boss else 240.0) * projectile_speed, false, 1.0, Color("#ff3b9f"), 11)
 	if boss:
 		for angle in [-0.45, -0.22, 0.22, 0.45]:
-			spawn_projectile(origin, aim.rotated(angle) * 285.0, false, 1.0, Color("#ffcc35"), 10)
+			spawn_projectile(origin, aim.rotated(angle) * 285.0 * projectile_speed, false, 1.0, Color("#ffcc35"), 10)
 
 func spawn_projectile(origin: Vector2, velocity: Vector2, friendly: bool, damage: float, color: Color, radius: float) -> NeonProjectile:
 	var shot: NeonProjectile = Projectile.new()
@@ -706,11 +767,31 @@ func destroy_enemy(enemy: Dictionary) -> void:
 	if was_boss:
 		boss_bar.visible = false
 		if was_midboss:
+			midboss_alive = false
 			spawn_pickup(death_position + Vector2(-35.0, 0.0), kills % 5)
 			show_message("중간 보스 격파!", 1.2)
 		if was_stage_boss:
-			stage_complete = true
-			finish_game(true)
+			boss_alive = false
+			advance_level()
+
+func advance_level() -> void:
+	var completed_level := level
+	clear_regular_enemies()
+	clear_hostile_projectiles()
+	wave_cooldowns.clear()
+	level += 1
+	level_elapsed = 0.0
+	midboss_spawned = false
+	midboss_alive = false
+	boss_spawned = false
+	boss_alive = false
+	hp = mini(PLAYER_CONFIG.max_hp, hp + 1)
+	invulnerable = 1.5
+	current_difficulty = difficulty_for_level(level)
+	enemy_spawner.set_difficulty(current_difficulty)
+	AudioManager.play_sfx("level_up")
+	show_message("레벨 %d 완료!\n레벨 %d 시작" % [completed_level, level], 2.2)
+	update_hud()
 
 func spawn_pickup(at: Vector2, kind: int) -> void:
 	var icon := Sprite2D.new()
@@ -765,27 +846,7 @@ func damage_player() -> void:
 	player.frame = 3
 	get_tree().create_timer(0.25).timeout.connect(func(): if is_instance_valid(player): player.frame = 0)
 	if hp <= 0:
-		restart_checkpoint()
-
-func restart_checkpoint() -> void:
-	for enemy in enemies:
-		if is_instance_valid(enemy.node):
-			enemy.node.queue_free()
-	enemies.clear()
-	formation_tracker.reset()
-	wave_cooldowns.clear()
-	clear_hostile_projectiles()
-	elapsed = checkpoint_time
-	hp = PLAYER_CONFIG.checkpoint_hp
-	special = maxf(0.0, special - 25.0)
-	player.position = Vector2(250, 360)
-	drag_target = player.position
-	invulnerable = 2.0
-	midboss_spawned = elapsed > 205.0
-	boss_spawned = elapsed >= 400.0
-	show_message("중간 지점 • 배달 재개", 1.8)
-	if boss_spawned:
-		spawn_boss()
+		finish_game(false)
 
 func use_special() -> void:
 	if state != State.PLAYING or special < PLAYER_CONFIG.special_max:
@@ -816,7 +877,8 @@ func update_hud() -> void:
 	hp_label.text = "%d / %d" % [hp, PLAYER_CONFIG.max_hp]
 	score_label.text = "%07d" % score
 	combo_label.text = "x%d  %02d" % [multiplier, combo]
-	timer_label.text = "%d:%02d" % [int(elapsed) / 60, int(elapsed) % 60]
+	level_label.text = "레벨 %d" % level
+	timer_label.text = "%d:%02d" % [int(run_elapsed) / 60, int(run_elapsed) % 60]
 	special_bar.value = special
 	for i in powerup_boxes.size():
 		powerup_boxes[i].modulate = Color.WHITE if weapon_levels[i] > 0 else Color(0.28, 0.28, 0.4, 0.65)
@@ -869,14 +931,14 @@ func show_pause_menu() -> void:
 	quit.pressed.connect(func(): get_tree().paused = false; show_title())
 	menu.add_child(quit)
 
-func finish_game(completed: bool) -> void:
+func finish_game(_completed := false) -> void:
 	if state == State.RESULT:
 		return
 	state = State.RESULT
-	SaveManager.record_result(score, completed)
+	SaveManager.record_result(score, level)
 	var result := PanelContainer.new()
-	result.position = Vector2(345, 155)
-	result.size = Vector2(590, 440)
+	result.position = Vector2(345, 110)
+	result.size = Vector2(590, 520)
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color("#160b3a")
 	style.border_color = Color("#ff43b4")
@@ -889,13 +951,20 @@ func finish_game(completed: bool) -> void:
 	content.add_theme_constant_override("separation", 20)
 	result.add_child(content)
 	var title := Label.new()
-	title.text = "배달 완료!" if completed else "배달 종료"
+	title.text = "배달 종료"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 44)
 	title.add_theme_color_override("font_color", Color("#fff25c"))
 	content.add_child(title)
 	var stats := Label.new()
-	stats.text = "점수  %07d\n최고 점수  %07d\n최고 배율  x%d" % [score, int(SaveManager.data.high_score), multiplier]
+	stats.text = "점수  %07d\n도달 레벨  %d\n플레이 시간  %d:%02d\n최고 점수  %07d\n최고 레벨  %d" % [
+		score,
+		level,
+		int(run_elapsed) / 60,
+		int(run_elapsed) % 60,
+		int(SaveManager.data.high_score),
+		int(SaveManager.data.highest_level)
+	]
 	stats.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stats.add_theme_font_size_override("font_size", 28)
 	content.add_child(stats)

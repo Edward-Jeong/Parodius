@@ -2,11 +2,12 @@
 
 Implemented:
 
-- Title, settings, pause, gameplay, checkpoint recovery, and result screens
+- Title, settings, pause, gameplay, game-over, and result screens
 - Drag movement, auto-fire, health, invulnerability, and special delivery attack
 - Five data-driven upgrades
-- Combo scoring and local high-score/settings save
-- Three timed market zones, mid-boss, and final hotteok UFO boss
+- Combo scoring and local high-score/highest-level/settings save
+- Three-minute endless levels with a 1:30 mid-boss and 3:00 final hotteok UFO boss
+- Capped per-level scaling for enemy health, speed, spawn rate, fire rate, and projectile speed
 - Desktop and touch input paths
 - Arrow-key/WASD diagonal movement for PC testing
 - Continuously scrolling night-market background

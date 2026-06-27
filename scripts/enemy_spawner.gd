@@ -7,11 +7,21 @@ const BOSS_TEXTURE := preload("res://assets/art/boss.png")
 var entity_layer: Node2D
 var enemies: Array[Dictionary]
 var formation_tracker
+var health_multiplier := 1.0
+var speed_multiplier := 1.0
+var shot_interval_multiplier := 1.0
+var score_multiplier := 1.0
 
 func setup(layer: Node2D, enemy_list: Array[Dictionary], tracker) -> void:
 	entity_layer = layer
 	enemies = enemy_list
 	formation_tracker = tracker
+
+func set_difficulty(difficulty: Dictionary) -> void:
+	health_multiplier = float(difficulty.get("health", 1.0))
+	speed_multiplier = float(difficulty.get("speed", 1.0))
+	shot_interval_multiplier = float(difficulty.get("shot_interval", 1.0))
+	score_multiplier = float(difficulty.get("score", 1.0))
 
 func spawn_wave(wave: EnemyWave) -> bool:
 	if wave.formation_size <= 1:
@@ -49,11 +59,13 @@ func spawn_enemy(frame: int, enemy_hp: float, speed: float, path: String, value:
 	var formation_size: int = formation_tracker.size_for(group_id)
 	sprite.position = formation_spawn_position(formation_index, formation_size, formation_spacing, lane_pattern) if group_id != "" else Vector2(1350, randf_range(150, 650))
 	entity_layer.add_child(sprite)
+	var scaled_hp := enemy_hp * health_multiplier
 	var enemy := {
-		"node": sprite, "hp": enemy_hp, "max_hp": enemy_hp, "speed": speed,
-		"path": path, "age": 0.0, "score": value, "radius": 45.0 * (enemy_scale / 0.18),
-		"shoot": randf_range(0.8, 2.2), "boss": false, "midboss": false, "stage_boss": false,
-		"group_id": group_id, "formation_index": formation_index, "shot_rate": shot_rate,
+		"node": sprite, "hp": scaled_hp, "max_hp": scaled_hp, "speed": speed * speed_multiplier,
+		"path": path, "age": 0.0, "score": roundi(value * score_multiplier), "radius": 45.0 * (enemy_scale / 0.18),
+		"shoot": randf_range(0.8, 2.2) * shot_interval_multiplier, "boss": false, "midboss": false, "stage_boss": false,
+		"group_id": group_id, "formation_index": formation_index, "shot_rate": shot_rate * shot_interval_multiplier,
+		"shot_interval_multiplier": shot_interval_multiplier,
 		"base_y": sprite.position.y
 	}
 	enemies.append(enemy)
@@ -68,11 +80,13 @@ func spawn_midboss() -> Dictionary:
 	sprite.scale = Vector2(0.34, 0.34)
 	sprite.position = Vector2(1450, 360)
 	entity_layer.add_child(sprite)
+	var scaled_hp := 260.0 * health_multiplier
 	var enemy := {
-		"node": sprite, "hp": 260.0, "max_hp": 260.0, "speed": 105.0,
-		"path": "midboss", "age": 0.0, "score": 7500, "radius": 86.0,
-		"shoot": 1.2, "boss": true, "midboss": true, "stage_boss": false,
-		"group_id": "", "formation_index": 0, "shot_rate": 0.0, "summon": 4.0
+		"node": sprite, "hp": scaled_hp, "max_hp": scaled_hp, "speed": 105.0 * speed_multiplier,
+		"path": "midboss", "age": 0.0, "score": roundi(7500 * score_multiplier), "radius": 86.0,
+		"shoot": 1.2 * shot_interval_multiplier, "boss": true, "midboss": true, "stage_boss": false,
+		"group_id": "", "formation_index": 0, "shot_rate": 0.0,
+		"shot_interval_multiplier": shot_interval_multiplier, "summon": 4.0 * shot_interval_multiplier
 	}
 	enemies.append(enemy)
 	return enemy
@@ -83,11 +97,13 @@ func spawn_boss() -> Dictionary:
 	sprite.scale = Vector2(0.33, 0.33)
 	sprite.position = Vector2(1450, 360)
 	entity_layer.add_child(sprite)
+	var scaled_hp := 650.0 * health_multiplier
 	var enemy := {
-		"node": sprite, "hp": 650.0, "max_hp": 650.0, "speed": 85.0,
-		"path": "boss", "age": 0.0, "score": 25000, "radius": 145.0,
-		"shoot": 1.4, "boss": true, "midboss": false, "stage_boss": true,
-		"group_id": "", "formation_index": 0, "shot_rate": 0.0
+		"node": sprite, "hp": scaled_hp, "max_hp": scaled_hp, "speed": 85.0 * speed_multiplier,
+		"path": "boss", "age": 0.0, "score": roundi(25000 * score_multiplier), "radius": 145.0,
+		"shoot": 1.4 * shot_interval_multiplier, "boss": true, "midboss": false, "stage_boss": true,
+		"group_id": "", "formation_index": 0, "shot_rate": 0.0,
+		"shot_interval_multiplier": shot_interval_multiplier
 	}
 	enemies.append(enemy)
 	return enemy

@@ -21,13 +21,17 @@ Controls:
 - Auto-fire is always enabled.
 - Press Space or tap the paw button when the special meter is full.
 - Press P/Escape or tap pause.
-- Development only: F9 advances stage time by 90 seconds.
+- Development only: F9 advances the current level time by 30 seconds.
 
 ## Test on iPhone without a Mac
 
 The `main` branch is automatically exported to Web and deployed with GitHub
 Pages. Open the Pages URL in iPhone Safari, rotate to landscape, tap once to
 unlock browser audio, and test touch dragging.
+
+Each endless level lasts three minutes before its final boss, with a mid-boss
+at 1:30. Defeating the final boss increases the difficulty and starts the next
+level. Losing all three health points ends the run.
 
 Expected URL after Pages is enabled:
 

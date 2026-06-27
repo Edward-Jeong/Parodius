@@ -4,8 +4,8 @@
 
 [resource]
 script = ExtResource("1")
-start_time = 135.0
-end_time = 202.0
+start_time = 58.0
+end_time = 89.0
 spawn_interval = 3.8
 enemy_frame = 1
 hp = 4.0

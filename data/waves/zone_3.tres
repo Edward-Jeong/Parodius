@@ -4,12 +4,11 @@
 
 [resource]
 script = ExtResource("1")
-start_time = 235.0
-end_time = 395.0
+start_time = 105.0
+end_time = 178.0
 spawn_interval = 0.82
 enemy_frame = 2
 hp = 4.0
 speed = 255.0
 path = "dive"
 score = 180
-
