@@ -53,6 +53,7 @@ var combo_timeout := 0.0
 var special := 0.0
 var invulnerable := 0.0
 var fire_cooldown := 0.0
+var homing_cooldown := 0.0
 var spawn_cooldown := 0.0
 var wave_cooldowns: Dictionary = {}
 var enemies: Array[Dictionary] = []
@@ -96,6 +97,8 @@ func _ready() -> void:
 		call_deferred("start_qa_boss")
 	elif "--qa-result" in args:
 		call_deferred("start_qa_result")
+	elif "--qa-pause" in args:
+		call_deferred("start_qa_pause")
 
 func start_qa_game() -> void:
 	start_game()
@@ -138,6 +141,11 @@ func start_qa_result() -> void:
 	finish_game(false)
 	await get_tree().process_frame
 	capture_qa_screen("result")
+
+func start_qa_pause() -> void:
+	start_game()
+	toggle_pause()
+	capture_qa_screen("pause")
 
 func capture_qa_screen(label: String) -> void:
 	await get_tree().process_frame
@@ -277,6 +285,8 @@ func show_title() -> void:
 
 func show_settings() -> void:
 	var modal := PanelContainer.new()
+	modal.name = "SettingsMenu"
+	modal.theme = make_theme()
 	modal.position = Vector2(400, 170)
 	modal.size = Vector2(480, 390)
 	var box := StyleBoxFlat.new()
@@ -332,6 +342,7 @@ func start_game() -> void:
 	combo = 0
 	multiplier = 1
 	special = 0.0
+	homing_cooldown = 0.0
 	kills = 0
 	wave_cooldowns.clear()
 	formation_tracker.reset()
@@ -530,6 +541,7 @@ func update_player(delta: float) -> void:
 	player.position.y = clampf(player.position.y, 125.0, 650.0)
 	drag_target = player.position if keyboard_direction.length_squared() > 0.0 else drag_target
 	fire_cooldown -= delta
+	homing_cooldown = maxf(0.0, homing_cooldown - delta)
 	if fire_cooldown <= 0.0:
 		fire_player_weapon()
 		fire_cooldown = PLAYER_CONFIG.fire_interval * (1.0 - weapon_levels[0] * 0.035)
@@ -663,9 +675,17 @@ func fire_player_weapon() -> void:
 	if weapon_levels[1] > 0:
 		for direction in [-1, 1]:
 			spawn_projectile(player.position + Vector2(58, direction * 12), Vector2(780, direction * 150 * weapon_levels[1]), true, damage * 0.65, Color("#ff43b4"), 7)
-	if weapon_levels[2] > 0 and kills % maxi(1, 5 - weapon_levels[2]) == 0:
+	if weapon_levels[2] > 0 and homing_cooldown <= 0.0 and active_homing_projectile_count() < 4:
 		var shot := spawn_projectile(player.position + Vector2(35, -30), Vector2(610, -90), true, damage * 1.2, Color("#ffe04d"), 10)
 		shot.homing = true
+		homing_cooldown = maxf(0.55, 1.35 - weapon_levels[2] * 0.22)
+
+func active_homing_projectile_count() -> int:
+	var count := 0
+	for shot in projectiles:
+		if is_instance_valid(shot) and not shot.is_queued_for_deletion() and shot.friendly and shot.homing:
+			count += 1
+	return count
 
 func fire_enemy(origin: Vector2, boss: bool) -> void:
 	var aim := (player.position - origin).normalized()
@@ -822,6 +842,8 @@ func collect_pickup(item: Dictionary) -> void:
 		weapon_levels[kind] = mini(2, weapon_levels[kind] + 1)
 	else:
 		weapon_levels[kind] = mini(WEAPONS[kind].max_level, weapon_levels[kind] + 1)
+	if kind == 2:
+		homing_cooldown = minf(homing_cooldown, 0.15)
 	item.node.queue_free()
 	pickups.erase(item)
 	shield_ring.visible = weapon_levels[3] > 0
@@ -903,6 +925,7 @@ func toggle_pause() -> void:
 func show_pause_menu() -> void:
 	var panel := PanelContainer.new()
 	panel.name = "PauseMenu"
+	panel.theme = make_theme()
 	panel.process_mode = Node.PROCESS_MODE_ALWAYS
 	panel.position = Vector2(420, 190)
 	panel.size = Vector2(440, 350)
@@ -937,6 +960,7 @@ func finish_game(_completed := false) -> void:
 	state = State.RESULT
 	SaveManager.record_result(score, level)
 	var result := PanelContainer.new()
+	result.theme = make_theme()
 	result.position = Vector2(345, 110)
 	result.size = Vector2(590, 520)
 	var style := StyleBoxFlat.new()

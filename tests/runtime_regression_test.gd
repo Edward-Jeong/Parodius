@@ -37,6 +37,11 @@ func run() -> void:
 	var ui_theme: Theme = game.make_theme()
 	if ui_theme.default_font == null or not ui_theme.default_font.has_char("한".unicode_at(0)):
 		failures.append("UI font does not contain Korean glyphs")
+	game.toggle_pause()
+	var pause_panel: PanelContainer = game.ui_layer.get_node_or_null("PauseMenu")
+	if pause_panel == null or pause_panel.theme == null or not pause_panel.theme.default_font.has_char("한".unicode_at(0)):
+		failures.append("Pause menu does not apply the Korean UI font")
+	game.toggle_pause()
 	if audio_manager.music_player.stream == null:
 		failures.append("Music stream was not created")
 	elif audio_manager.music_player.stream.data.is_empty():
@@ -192,6 +197,22 @@ func run() -> void:
 	var scaled_projectile = game.projectiles.back()
 	if not is_equal_approx(scaled_projectile.velocity.length(), 254.4):
 		failures.append("Enemy projectile speed did not scale with the level")
+
+	for shot in game.projectiles:
+		if is_instance_valid(shot):
+			shot.queue_free()
+	game.projectiles.clear()
+	game.weapon_levels[2] = 3
+	game.homing_cooldown = 0.0
+	for index in 20:
+		game.fire_player_weapon()
+	if game.active_homing_projectile_count() != 1:
+		failures.append("Homing weapon ignored its firing cooldown")
+	for index in 10:
+		game.homing_cooldown = 0.0
+		game.fire_player_weapon()
+	if game.active_homing_projectile_count() > 4:
+		failures.append("More than four homing projectiles accumulated on screen")
 
 	var save_manager = root.get_node("SaveManager")
 	if not save_manager.data.has("highest_level"):
